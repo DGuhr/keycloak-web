@@ -1,0 +1,170 @@
+:title: Keycloak.X 15.1 - The missing release notes
+:date: 2021-10-28
+:publish: false
+:author: Keycloak Team
+
+As said in our last post(link), we want to provide you an overview about all the changes which are packed inside Keycloak.X 15.1. And to answer one question up-front: Yes, there are some breaking changes. You could also consider 15.1 a 16.0.RC1, but due to our versioning is basically based the Wildfly Keycloak distribution, these changes are now in 15.1.
+
+== "Config" is now "Build"
+
+One of the most obvious breaking changes is a change in naming of one of the core commands to use with Keycloak: The `build` command, to build an optimized server image. This was done to stay consistent with other naming ("buildtime options") and yes, well, to better reflect what it actually does. So, when you used
+
+[source,bash]
+----
+kc.sh config --db=postgres && kc.sh --db-username=**** --db-password=****
+----
+in the past, this is now renamed to
+
+[source,bash]
+----
+kc.sh build --db=postgres && kc.sh --db-username=**** --db-password=****
+----
+Same goes for the `--auto-config` command, which is now called `--auto-build` instead.
+
+== Support for MS-SQL / Oracle Database Vendors
+Keycloak 15.1 now provides support for the mentioned Database Vendors. Running e.g.
+
+[source,bash]
+----
+kc.sh build --db=ms-sql && kc.sh --db-username=**** --db-password=****
+----
+will try to connect you directly to a MS-SQL database `keycloak` located at `localhost:1433`.
+
+== New hostname settings syntax
+...
+
+== Hashicorp Vault integration
+Besides the file-based vault, you can now also use the Hashicorp Vault ... (should we mention at all?)
+
+== cluster is now cache
+... (describes better what it actually is, no clustered keycloak but a distributed cache)
+
+=== and also a buildtime option
+...(bc setting it up at runtime takes a few hundred ms)
+
+== Core Concepts
+The new, Quarkus based Keycloak distribution has two different flavours of configuration options:
+
+* Buildtime Options, which are handled during the build time phase, e.g. by invoking `kc.sh build --db=postgres`
+* Runtime options, which may be changed after Keycloak has been built but before the actual start of Keycloak, e.g. by invoking
+
+[source,bash]
+----
+kc.sh start --http-enabled=true
+----
+
+But why this distinction? Well, the `build` command starts a build process during which Keycloak gets optimized by the applied builtime configuration values.
+
+In this phase, multiple initialization steps (e.g. creating proxy instances for CDI Beans, loading providers, switching features on or off, setting up the db connection, ...) are executed and baked into the the current build of Keycloak. This saves a good amount of time when actually starting your build and is one of the core concepts behind the fast startup times we achieve.
+
+As Keycloak is and always will be running on very heterogenouos IT environments, this distinction provides a great way to tailor the resulting server to the specific environment our users have, and get all the advantages of this custom-tailored build, like fast startup time and low memory footprint.
+
+
+== Config Sources
+Keycloak provides by default multiple ways of reading configuration. To be able to decide which configuration should be used when it's set in more than one place, we're using ordinals to choose. The higher the Ordinal, the higher the precedence:
+
+The different property sources, in descending order, are:
+
+. (500) CLI properties (e.g. `--http-enabled=true`)
+. (400) System Properties (e.g. `-Dkc.http.enabled=true`)
+. (350) Environment variables (e.g. `KC_HTTP_ENABLED=true`)
+. (300) Persisted Properties^1^
+. (250) explicit properties file vie `--config-file` command (if existent)
+. (240) keycloak.properties file
+
+^1^ Persisted properties are internal properties containing the runtime config of a previously built server. They are generated when running the `kc.sh build` command and not meant to be modified. They are located in the classpath for that reason.
+
+== CLI Overview
+Our CLI provides a custom-tailored, thin wrapper around the server which makes configuring Keycloak a breeze.
+
+_note: For ease of reading we use `kc.sh` in the following examples._
+
+== command- and option-syntax
+The CLI is using strictly dash-cased Syntax as a standard. If you for example want to configure a SPI config attribute directly, this would look like:
+
+[source, bash]
+----
+kc.sh start --spi-client-jpa-searchable-attributes=bar,foo
+----
+
+=== Autocomplete
+We included an autocomplete script to make working with the CLI even more convenient. The script for now works for bash and ZSH shells. To enable the autocompletion for the current shell session, just cd into `<keycloak>/bin` and use the following command:
+
+[source, bash]
+----
+source <(./kc.sh tools completion)
+----
+
+After that, just typing for example `kc.sh start --` and press  `<TAB><TAB>` gets you completion candidates for the start command.
+
+== Start and Start-Dev Command
+There are two modes to start a Keycloak server via the CLI:
+
+.1 Start in production mode
+
+[source, bash]
+----
+kc.sh start <--options>
+----
+
+Starts the server in production mode, with sensible production defaults set, e.g. HTTPS. It is highly recommended to use `kc.sh build` before invoking this command, to get a better startup time by rebuilding the keycloak image.
+
+.2  Start in development mode
+
+[source, bash]
+----
+kc.sh start-dev <--options>
+----
+
+Starts the server with the dev profile and auto-build option applied. This command is strictly meant for development / try-out purposes and should not be used for a productive start-up.
+
+_note: You have to rebuild your Keycloak server via the `build` command after using this command, as the profile is persisted the persisted properties after using `start-dev`._
+
+== Getting Help
+We tried to make the CLI as self-explanatory as possible. To achieve that, nearly every command provides hints on how to use it. A good starting point is invoking `kc.sh --help` to see the general help for the CLI.
+
+_Note: You can use `-h` as a short form of `--help` for sure_
+
+You may notice that the help output varies depending on the command you want help. That's because of the intended usage of the command to configure different Keycloak options, either runtime- or buildtime.
+
+* `kc.sh start --help` output shows only runtime properties, because it does not build the server internally, and thus changed buildtime options would be ignored.
+* `kc.sh start --auto-build --help` output instead shows both, buildtime- and runtime options, because the auto-build option automatically checks if the changed property is a buildtime property and invokes the build step, if so.
+* `kc.sh build --help` shows only buildtime properties per default, as the command is intended to be used to build a new Keycloak server image.
+* `kc.sh start-dev --help`  also shows only runtime properties.
+
+=== See more using --help-all
+To also see the runtime options in the help of the `build` command, use
+
+[source, bash]
+----
+kc.sh build --help-all
+----
+
+Same goes if you want to see the buildtime options you can use with the `start-dev` command:
+[source, bash]
+----
+kc.sh start-dev --help-all
+----
+
+We decided to separate these options from the normal help in order to make the intention of the commands more clear.
+
+=== Configure Keycloak using keycloak.properties
+==== Properties Overview
+Where to find, using --config-file
+
+==== Using Environment/System Variables as fallback
+Just to mention, with syntax examples
+
+==== Using different Profiles
+Also mentioning, with syntax examples.
+
+== Keycloak Docker Image
+mention w/ link to repo
+
+=== How to create a local docker image
+mention no need to start a httpserver locally anymore, just use tarball from built dist..?
+
+== References
+*
+* https://quarkus.io/guides/reaugmentation
+* https://quarkus.io/guides/config-reference#configuration-sources
